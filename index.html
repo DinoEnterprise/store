@@ -83,12 +83,19 @@ tr:hover {
   background: #f5f5f5;
 }
 
+.status-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+}
 #msg {margin-top:6px;font-weight:600;}
 </style>
 </head>
 
 <body>
 
+<!-- ADD MEMBER -->
 <div class="card">
 <h3>Register Artist</h3>
 <input id="email" placeholder="Email">
@@ -99,6 +106,7 @@ tr:hover {
 <p id="msg"></p>
 </div>
 
+<!-- WITHDRAW REQUESTS -->
 <div class="card">
 <h3>Withdraw Requests</h3>
 <div class="table-container">
@@ -119,6 +127,7 @@ tr:hover {
 </div>
 </div>
 
+<!-- MEMBERS -->
 <div class="card">
 <h3>Members</h3>
 <div class="table-container">
@@ -128,6 +137,25 @@ tr:hover {
       <th>Nama</th>
       <th>Email</th>
       <th>Saldo</th>
+      <th>Aksi</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+</div>
+
+<!-- RELEASES -->
+<div class="card">
+<h3>Releases</h3>
+<div class="table-container">
+<table id="releaseTable">
+  <thead>
+    <tr>
+      <th>Artist</th>
+      <th>Title</th>
+      <th>Genre</th>
+      <th>Status</th>
       <th>Aksi</th>
     </tr>
   </thead>
@@ -146,6 +174,7 @@ firebase.initializeApp({
 const auth=firebase.auth();
 const db=firebase.database();
 
+// REGISTER ARTIST
 function register(){
  let email=document.getElementById("email").value.trim();
  let pass=document.getElementById("password").value.trim();
@@ -179,6 +208,7 @@ function register(){
  });
 }
 
+// LOAD WITHDRAWS
 function loadWithdraws(){
  db.ref("withdraws").on("value",snap=>{
    const tbody = document.querySelector("#withdrawTable tbody");
@@ -193,10 +223,14 @@ function loadWithdraws(){
          <td>${d.bank}</td>
          <td>${d.rekening}</td>
          <td>Rp ${Number(d.jumlah).toLocaleString()}</td>
-         <td>${d.status}</td>
          <td>
-           <button class="action-btn" onclick="setStatus('${user.key}','${w.key}','approve')">Approve</button>
-           <button class="action-btn" onclick="setStatus('${user.key}','${w.key}','reject')">Reject</button>
+           <span class="status-badge" style="border:1px solid ${getStatusColor(d.status)}; color:${getStatusColor(d.status)}">
+             ${(d.status||"pending").toUpperCase()}
+           </span>
+         </td>
+         <td>
+           <button class="action-btn" onclick="setWithdrawStatus('${user.key}','${w.key}','approve')">Approve</button>
+           <button class="action-btn" onclick="setWithdrawStatus('${user.key}','${w.key}','reject')">Reject</button>
            <button class="action-btn" onclick="deleteWithdraw('${user.key}','${w.key}')">Delete</button>
          </td>
        `;
@@ -206,24 +240,7 @@ function loadWithdraws(){
  });
 }
 
-function setStatus(uid,key,status){
- db.ref(`withdraws/${uid}/${key}/status`).set(status)
- .then(()=>{
-   if(status==="approve"){
-     db.ref(`users/${uid}/saldo`).set(0);
-   }
-   loadWithdraws();
-   loadMembers();
- });
-}
-
-function deleteWithdraw(uid,key){
- if(confirm("Apakah yakin ingin menghapus riwayat ini?")){
-   db.ref(`withdraws/${uid}/${key}`).remove()
-   .then(()=> loadWithdraws());
- }
-}
-
+// LOAD MEMBERS
 function loadMembers(){
   const tbody = document.querySelector("#memberTable tbody");
   db.ref("users").on("value", snap=>{
@@ -237,7 +254,7 @@ function loadMembers(){
         <td>${d.email||"-"}</td>
         <td>${saldoFormatted}</td>
         <td>
-          <button class="action-btn" onclick="editSaldo('${u.key}')">Edit</button>
+          <button class="action-btn" onclick="editMember('${u.key}')">Edit</button>
           <button class="action-btn" onclick="deleteMember('${u.key}')">Hapus</button>
         </td>
       `;
@@ -246,30 +263,91 @@ function loadMembers(){
   });
 }
 
-function editSaldo(uid){
+// LOAD RELEASES
+function loadReleases(){
+  const tbody = document.querySelector("#releaseTable tbody");
+  db.ref("releases").on("value", snap=>{
+    tbody.innerHTML="";
+    snap.forEach(u=>{
+      u.forEach(r=>{
+        const d = r.val();
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${d.artist||"-"}</td>
+          <td>${d.title||"-"}</td>
+          <td>${d.genre||"-"}</td>
+          <td>
+            <span class="status-badge" style="border:1px solid ${getStatusColor(d.status)}; color:${getStatusColor(d.status)}">
+              ${(d.status||"pending").toUpperCase()}
+            </span>
+          </td>
+          <td>
+            <button class="action-btn" onclick="setReleaseStatus('${u.key}','${r.key}','approved')">Approve</button>
+            <button class="action-btn" onclick="setReleaseStatus('${u.key}','${r.key}','rejected')">Reject</button>
+            <button class="action-btn" onclick="deleteRelease('${u.key}','${r.key}')">Delete</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+  });
+}
+
+// UTILS
+function getStatusColor(status){
+  if(status=="approved") return "#10b981";
+  if(status=="rejected") return "#ef4444";
+  return "#f59e0b"; // pending
+}
+
+// ACTION FUNCTIONS
+function setWithdrawStatus(uid,key,status){
+ db.ref(`withdraws/${uid}/${key}/status`).set(status)
+ .then(()=>{
+   if(status==="approve") db.ref(`users/${uid}/saldo`).set(0);
+   loadWithdraws(); loadMembers();
+ });
+}
+function deleteWithdraw(uid,key){
+ if(confirm("Apakah yakin ingin menghapus riwayat ini?")){
+   db.ref(`withdraws/${uid}/${key}`).remove().then(()=>loadWithdraws());
+ }
+}
+
+function editMember(uid){
   let newSaldo = prompt("Masukkan saldo baru:");
   if(newSaldo!==null){
     newSaldo = Number(newSaldo);
-    if(isNaN(newSaldo)){
-      alert("⚠ Harus angka!");
-      return;
-    }
-    db.ref(`users/${uid}/saldo`).set(newSaldo)
-    .then(()=>alert("✔ Saldo berhasil diupdate"))
-    .catch(err=>alert("⚠ "+err.message));
+    if(isNaN(newSaldo)){ alert("⚠ Harus angka!"); return; }
+    db.ref(`users/${uid}/saldo`).set(newSaldo);
   }
+  let newPass = prompt("Masukkan password baru (kosongkan jika tidak ingin ganti):");
+  if(newPass){
+    auth.currentUser.updatePassword(newPass).catch(err=>alert(err.message));
+    // NOTE: update password via Admin SDK di server sebenarnya
+  }
+  loadMembers();
 }
 
 function deleteMember(uid){
-  if(confirm("Apakah yakin ingin menghapus member ini?")){
-    db.ref(`users/${uid}`).remove()
-    .then(()=>loadMembers());
+ if(confirm("Apakah yakin ingin menghapus member ini?")){
+   db.ref(`users/${uid}`).remove().then(()=>loadMembers());
+ }
+}
+
+function setReleaseStatus(uid,rid,status){
+  db.ref(`releases/${uid}/${rid}/status`).set(status).then(()=>loadReleases());
+}
+function deleteRelease(uid,rid){
+  if(confirm("Apakah yakin ingin menghapus rilisan ini?")){
+    db.ref(`releases/${uid}/${rid}`).remove().then(()=>loadReleases());
   }
 }
 
-/* INITIAL LOAD */
+// INITIAL LOAD
 loadWithdraws();
 loadMembers();
+loadReleases();
 </script>
 
 </body>
